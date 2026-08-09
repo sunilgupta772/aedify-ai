@@ -51,9 +51,9 @@ const Home = () => {
     try {
       setLoading(true);
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: `
+  const response = await ai.models.generateContent({
+  model: "gemini-3.6-flash",
+  contents: `
 You are an expert web developer and UI/UX designer.
 
 Create a modern, animated, fully responsive UI component.
@@ -65,12 +65,13 @@ Framework:
 ${frameWork.value}
 
 Rules:
+
 - Return ONLY code
 - Use Markdown fenced code blocks
 - Single HTML file only
 - No explanations, no comments
-        `,
-      });
+`,
+});
 
       setCode(extractCode(response.text));
       setOutputScreen(true);
