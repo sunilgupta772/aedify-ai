@@ -9,7 +9,7 @@ body {
   box-sizing: border-box;
   overflow-x: hidden;
   background-color: var(--primary-bg);
-  color: #fff;
+  color: var(--text-color);
 }
 
 html {
@@ -20,6 +20,45 @@ html {
   --primary-bg: #09090B;
   --secondary-bg: #141319;
   --tertiary-bg: #17171C;
+  --text-color: #fff;
+  --muted-text: #9ca3af;
+  --border-color: #1f2937;
+}
+
+:root[data-theme='light'] {
+  --primary-bg: #f8fafc;
+  --secondary-bg: #ffffff;
+  --tertiary-bg: #eef2f7;
+  --text-color: #111827;
+  --muted-text: #64748b;
+  --border-color: #cbd5e1;
+}
+
+.app-shell {
+  min-height: 100vh;
+  background-color: var(--primary-bg);
+  color: var(--text-color);
+}
+
+.surface-secondary {
+  background-color: var(--secondary-bg);
+}
+
+.surface-tertiary {
+  background-color: var(--tertiary-bg);
+}
+
+.field-bg {
+  background-color: var(--primary-bg);
+  color: var(--text-color);
+}
+
+.muted-text {
+  color: var(--muted-text);
+}
+
+.nav {
+  border-color: var(--border-color);
 }
 
 .sp-text {
@@ -32,8 +71,9 @@ html {
 .icon{
   padding: 15px;
   font-size: 20px;
-  border: 1px solid #1f2937;
+  border: 1px solid var(--border-color);
   border-radius: 10px;
   background-color: var(--secondary-bg);
   cursor: pointer;
+  color: var(--text-color);
 };

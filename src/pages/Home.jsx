@@ -12,12 +12,7 @@ import { GoogleGenAI } from "@google/genai";
 import { ClipLoader } from "react-spinners";
 import { toast } from "react-toastify";
 
-// API fronm env
-const ai = new GoogleGenAI({
-  apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY,
-});
-
-const Home = () => {
+const Home = ({ theme, onToggleTheme }) => {
   const options = [
     { value: "html-css", label: "HTML + CSS" },
     { value: "html-tailwind", label: "HTML + Tailwind CSS" }, 
@@ -50,6 +45,13 @@ const Home = () => {
 
     try {
       setLoading(true);
+
+      const apiKey = import.meta.env.VITE_GOOGLE_AI_API_KEY;
+      if (!apiKey) {
+        throw new Error("Missing VITE_GOOGLE_AI_API_KEY");
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
 
   const response = await ai.models.generateContent({
   model: "gemini-3.6-flash",
@@ -107,15 +109,15 @@ Rules:
 
   return (
     <>
-      <Navbar />
+      <Navbar theme={theme} onToggleTheme={onToggleTheme} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-6 lg:px-16">
         {/* LEFT */}
-        <div className="bg-[#141319] mt-5 p-5 rounded-xl">
+        <div className="surface-secondary mt-5 p-5 rounded-xl">
           <h3 className="text-[25px] font-semibold">
             AI Component Generator
           </h3>
-          <p className="text-gray-400 mt-2">
+          <p className="muted-text mt-2">
             Describe your component and let AI code it for you.
           </p>
 
@@ -131,7 +133,7 @@ Rules:
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            className="w-full min-h-[200px] mt-3 p-3 bg-[#09090B] rounded-xl text-white outline-none"
+            className="field-bg w-full min-h-[200px] mt-3 p-3 rounded-xl outline-none"
             placeholder="Describe your component..."
           />
 
@@ -145,17 +147,17 @@ Rules:
         </div>
 
         {/* RIGHT */}
-        <div className="bg-[#141319] rounded-xl h-[80vh] overflow-hidden">
+        <div className="surface-secondary rounded-xl h-[80vh] overflow-hidden">
           {!outputScreen ? (
             <div className="h-full flex flex-col items-center justify-center">
               <HiOutlineCode size={40} />
-              <p className="text-gray-400 mt-3">
+              <p className="muted-text mt-3">
                 Your generated code will appear here
               </p>
             </div>
           ) : (
             <>
-              <div className="flex bg-[#17171C]">
+              <div className="surface-tertiary flex">
                 <button
                   onClick={() => setTab(1)}
                   className={`w-1/2 p-2 ${
@@ -178,7 +180,7 @@ Rules:
                 <Editor
                   value={code}
                   height="100%"
-                  theme="vs-dark"
+                  theme={theme === "dark" ? "vs-dark" : "light"}
                   language="html"
                 />
               ) : (
