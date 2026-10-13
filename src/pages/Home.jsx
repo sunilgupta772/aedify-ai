@@ -12,12 +12,18 @@ import { GoogleGenAI } from "@google/genai";
 import { ClipLoader } from "react-spinners";
 import { toast } from "react-toastify";
 
-// Vite: key must be in .env as VITE_GOOGLE_AI_API_KEY
+// Vite: key must be set as VITE_GOOGLE_AI_API_KEY (in .env locally,
+// and in Vercel -> Settings -> Environment Variables). Redeploy after changing it.
 // (Create React App users: use process.env.REACT_APP_GOOGLE_AI_API_KEY instead)
 const API_KEY = import.meta.env.VITE_GOOGLE_AI_API_KEY;
 
-const MODEL = "gemini-flash-latest";
-const MAX_RETRIES = 3;
+// Tried in order. If one is overloaded or missing, the next one is used.
+const MODELS = [
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3.1-flash-lite",
+];
+const RETRIES_PER_MODEL = 1;
 
 const options = [
   { value: "html-css", label: "HTML + CSS" },
@@ -34,12 +40,61 @@ const options = [
 const extractCode = (response = "") => {
   const text = response.trim();
 
-  // Properly closed fence
   const closed = text.match(/```(?:html|html5)?\s*([\s\S]*?)```/i);
   if (closed) return closed[1].trim();
 
-  // Unclosed fence (truncated output): strip the opening fence only
   return text.replace(/^```(?:html|html5)?\s*/i, "").trim();
+};
+
+const getErrorInfo = (err) => ({
+  message: String(err?.message || err),
+  status: err?.status ?? err?.statusCode ?? err?.error?.code,
+});
+
+const isRateLimit = (err) => {
+  const { message, status } = getErrorInfo(err);
+  return status === 429 || /429|RESOURCE_EXHAUSTED/i.test(message);
+};
+
+const isRetryable = (err) => {
+  const { message, status } = getErrorInfo(err);
+  return (
+    [500, 503, 429].includes(status) ||
+    /503|429|500|UNAVAILABLE|RESOURCE_EXHAUSTED|high demand|overloaded/i.test(
+      message
+    )
+  );
+};
+
+const isModelMissing = (err) => {
+  const { message, status } = getErrorInfo(err);
+  return status === 404 || /404|NOT_FOUND|not found/i.test(message);
+};
+
+// Try each model in order, with a short retry on each
+const generateWithFallback = async (ai, contents, onRetry) => {
+  let lastError;
+
+  for (const model of MODELS) {
+    for (let attempt = 0; attempt <= RETRIES_PER_MODEL; attempt++) {
+      try {
+        return await ai.models.generateContent({ model, contents });
+      } catch (err) {
+        lastError = err;
+
+        if (isModelMissing(err)) break; // move on to the next model
+        if (!isRetryable(err)) throw err; // bad key, bad request, etc.
+
+        if (attempt < RETRIES_PER_MODEL) {
+          const delay = 1500 * 2 ** attempt;
+          onRetry?.(model, delay);
+          await new Promise((r) => setTimeout(r, delay));
+        }
+      }
+    }
+  }
+
+  throw lastError;
 };
 
 const Home = ({ theme, onToggleTheme }) => {
@@ -51,7 +106,7 @@ const Home = ({ theme, onToggleTheme }) => {
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Generate component with retry logic
+  // Generate component with model fallback
   const getResponse = async () => {
     if (!prompt.trim()) {
       toast.error("Please describe your component first");
@@ -60,7 +115,7 @@ const Home = ({ theme, onToggleTheme }) => {
 
     if (!API_KEY) {
       toast.error(
-        "Gemini API key is missing. Add VITE_GOOGLE_AI_API_KEY to .env and restart the dev server."
+        "Gemini API key is missing. Add VITE_GOOGLE_AI_API_KEY and redeploy."
       );
       return;
     }
@@ -69,14 +124,8 @@ const Home = ({ theme, onToggleTheme }) => {
 
     try {
       const ai = new GoogleGenAI({ apiKey: API_KEY });
-      let response = null;
 
-      // 1 initial attempt + MAX_RETRIES retries
-      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        try {
-          response = await ai.models.generateContent({
-            model: MODEL,
-            contents: `
+      const contents = `
 You are an expert web developer and UI/UX designer.
 
 Create a modern, animated, fully responsive UI component.
@@ -100,32 +149,14 @@ Requirements:
 - Add animations only where appropriate.
 - Do not include explanations outside the code.
 - Return the result inside one HTML Markdown code block.
-`,
-          });
+`;
 
-          break;
-        } catch (err) {
-          const message = String(err?.message || err);
-          const status = err?.status ?? err?.statusCode;
-
-          const retryable =
-            status === 503 ||
-            status === 429 ||
-            status === 500 ||
-            /503|429|500|UNAVAILABLE|RESOURCE_EXHAUSTED|high demand|overloaded/i.test(
-              message
-            );
-
-          if (!retryable || attempt === MAX_RETRIES) {
-            throw err;
-          }
-
-          const delay = 1000 * 2 ** attempt;
-          toast.info(`AI server busy. Retrying in ${delay / 1000} seconds...`);
-
-          await new Promise((resolve) => setTimeout(resolve, delay));
-        }
-      }
+      const response = await generateWithFallback(
+        ai,
+        contents,
+        (model, delay) =>
+          toast.info(`${model} is busy. Retrying in ${delay / 1000}s...`)
+      );
 
       const generatedCode = response?.text;
 
@@ -133,9 +164,7 @@ Requirements:
         throw new Error("The AI returned an empty response.");
       }
 
-      const cleanCode = extractCode(generatedCode);
-
-      setCode(cleanCode);
+      setCode(extractCode(generatedCode));
       setOutputScreen(true);
       setTab(1);
 
@@ -143,20 +172,18 @@ Requirements:
     } catch (err) {
       console.error("Gemini API Error:", err);
 
-      const message = String(err?.message || err);
-      const status = err?.status ?? err?.statusCode;
+      const { message } = getErrorInfo(err);
 
-      if (
-        status === 503 ||
-        /503|UNAVAILABLE|high demand|overloaded/i.test(message)
-      ) {
-        toast.error("Gemini server is busy. Please try again later.");
-      } else if (status === 429 || /429|RESOURCE_EXHAUSTED/i.test(message)) {
+      if (isRateLimit(err)) {
         toast.error("API quota or rate limit reached. Check your usage.");
+      } else if (isRetryable(err)) {
+        toast.error(
+          "All Gemini models are busy right now. Try again in a minute."
+        );
+      } else if (isModelMissing(err)) {
+        toast.error("No configured model is available. Update the MODELS list.");
       } else if (/API key|API_KEY_INVALID|401|403/i.test(message)) {
         toast.error("Check your Gemini API key and permissions.");
-      } else if (/404|not found/i.test(message)) {
-        toast.error(`Model "${MODEL}" not available. Check the model name.`);
       } else {
         toast.error("Failed to generate code. Check the console.");
       }
