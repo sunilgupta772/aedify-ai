@@ -47,8 +47,7 @@ const Home = ({ theme, onToggleTheme }) => {
       return;
     }
 
-    const apiKey = import.meta.env.VITE_GOOGLE_AI_API_KEY;
-
+const apiKey = process.env.GOOGLE_AI_API_KEY;
     if (!apiKey) {
       toast.error("Gemini API key is missing. Check your .env file.");
       return;
