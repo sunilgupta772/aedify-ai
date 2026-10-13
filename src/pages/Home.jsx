@@ -16,7 +16,7 @@ import { toast } from "react-toastify";
 // (Create React App users: use process.env.REACT_APP_GOOGLE_AI_API_KEY instead)
 const API_KEY = import.meta.env.VITE_GOOGLE_AI_API_KEY;
 
-const MODEL = "gemini-2.5-flash";
+const MODEL = "gemini-flash-latest";
 const MAX_RETRIES = 3;
 
 const options = [
