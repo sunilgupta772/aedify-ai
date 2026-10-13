@@ -1,11 +1,10 @@
-
 import React, { useState } from "react";
 import Navbar from "../components/Navbar";
 import Select from "react-select";
 import { BsStars } from "react-icons/bs";
 import { HiOutlineCode } from "react-icons/hi";
 import Editor from "@monaco-editor/react";
-import { IoCloseSharp, IoCopy } from "react-icons/io5";
+import { IoCopy } from "react-icons/io5";
 import { PiExportBold } from "react-icons/pi";
 import { ImNewTab } from "react-icons/im";
 import { FiRefreshCcw } from "react-icons/fi";
@@ -13,32 +12,44 @@ import { GoogleGenAI } from "@google/genai";
 import { ClipLoader } from "react-spinners";
 import { toast } from "react-toastify";
 
-const Home = ({ theme, onToggleTheme }) => {
-  const options = [
-    { value: "html-css", label: "HTML + CSS" },
-    { value: "html-tailwind", label: "HTML + Tailwind CSS" },
-    { value: "html-bootstrap", label: "HTML + Bootstrap" },
-    { value: "html-css-js", label: "HTML + CSS + JS" },
-    {
-      value: "html-tailwind-bootstrap",
-      label: "HTML + Tailwind + Bootstrap",
-    },
-  ];
+// Vite: key must be in .env as VITE_GOOGLE_AI_API_KEY
+// (Create React App users: use process.env.REACT_APP_GOOGLE_AI_API_KEY instead)
+const API_KEY = import.meta.env.VITE_GOOGLE_AI_API_KEY;
 
+const MODEL = "gemini-2.5-flash";
+const MAX_RETRIES = 3;
+
+const options = [
+  { value: "html-css", label: "HTML + CSS" },
+  { value: "html-tailwind", label: "HTML + Tailwind CSS" },
+  { value: "html-bootstrap", label: "HTML + Bootstrap" },
+  { value: "html-css-js", label: "HTML + CSS + JS" },
+  {
+    value: "html-tailwind-bootstrap",
+    label: "HTML + Tailwind + Bootstrap",
+  },
+];
+
+// Extract code from Markdown fences (handles unclosed fences too)
+const extractCode = (response = "") => {
+  const text = response.trim();
+
+  // Properly closed fence
+  const closed = text.match(/```(?:html|html5)?\s*([\s\S]*?)```/i);
+  if (closed) return closed[1].trim();
+
+  // Unclosed fence (truncated output): strip the opening fence only
+  return text.replace(/^```(?:html|html5)?\s*/i, "").trim();
+};
+
+const Home = ({ theme, onToggleTheme }) => {
   const [outputScreen, setOutputScreen] = useState(false);
   const [tab, setTab] = useState(1);
   const [prompt, setPrompt] = useState("");
   const [frameWork, setFrameWork] = useState(options[0]);
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
-  const [isNewTabOpen, setIsNewTabOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-
-  // Extract code from Markdown fences
-  const extractCode = (response = "") => {
-    const match = response.match(/```(?:html|html5)?\s*([\s\S]*?)```/i);
-    return match ? match[1].trim() : response.trim();
-  };
 
   // Generate component with retry logic
   const getResponse = async () => {
@@ -47,25 +58,24 @@ const Home = ({ theme, onToggleTheme }) => {
       return;
     }
 
-const apiKey = process.env.GOOGLE_AI_API_KEY;
-    if (!apiKey) {
-      toast.error("Gemini API key is missing. Check your .env file.");
+    if (!API_KEY) {
+      toast.error(
+        "Gemini API key is missing. Add VITE_GOOGLE_AI_API_KEY to .env and restart the dev server."
+      );
       return;
     }
 
     setLoading(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey });
-      const maxRetries = 3;
+      const ai = new GoogleGenAI({ apiKey: API_KEY });
       let response = null;
 
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      // 1 initial attempt + MAX_RETRIES retries
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
           response = await ai.models.generateContent({
-            // If unavailable for your API key, choose a supported model
-            // from https://ai.google.dev/gemini-api/docs/models
-            model: "gemini-2.5-flash",
+            model: MODEL,
             contents: `
 You are an expert web developer and UI/UX designer.
 
@@ -106,14 +116,12 @@ Requirements:
               message
             );
 
-          if (!retryable || attempt === maxRetries) {
+          if (!retryable || attempt === MAX_RETRIES) {
             throw err;
           }
 
           const delay = 1000 * 2 ** attempt;
-          toast.info(
-            `AI server busy. Retrying in ${delay / 1000} seconds...`
-          );
+          toast.info(`AI server busy. Retrying in ${delay / 1000} seconds...`);
 
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
@@ -143,13 +151,12 @@ Requirements:
         /503|UNAVAILABLE|high demand|overloaded/i.test(message)
       ) {
         toast.error("Gemini server is busy. Please try again later.");
-      } else if (
-        status === 429 ||
-        /429|RESOURCE_EXHAUSTED/i.test(message)
-      ) {
+      } else if (status === 429 || /429|RESOURCE_EXHAUSTED/i.test(message)) {
         toast.error("API quota or rate limit reached. Check your usage.");
       } else if (/API key|API_KEY_INVALID|401|403/i.test(message)) {
         toast.error("Check your Gemini API key and permissions.");
+      } else if (/404|not found/i.test(message)) {
+        toast.error(`Model "${MODEL}" not available. Check the model name.`);
       } else {
         toast.error("Failed to generate code. Check the console.");
       }
@@ -217,10 +224,8 @@ Requirements:
       return;
     }
 
-    setIsNewTabOpen(false);
-
-    // Keep the Blob URL alive briefly for the new tab to load.
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    // Keep the Blob URL alive for 5 minutes so the tab can load/refresh
+    setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
   };
 
   return (
@@ -230,9 +235,7 @@ Requirements:
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-6 lg:px-16">
         {/* LEFT PANEL */}
         <div className="surface-secondary mt-5 p-5 rounded-xl">
-          <h3 className="text-[25px] font-semibold">
-            AI Component Generator
-          </h3>
+          <h3 className="text-[25px] font-semibold">AI Component Generator</h3>
 
           <p className="muted-text mt-2">
             Describe your component and let AI code it for you.
@@ -265,12 +268,7 @@ Requirements:
             disabled={loading}
             className="mt-4 flex items-center gap-2 px-5 py-3 rounded-lg bg-purple-600 hover:opacity-90 disabled:opacity-60 text-white"
           >
-            {loading ? (
-              <ClipLoader size={18} color="white" />
-            ) : (
-              <BsStars />
-            )}
-
+            {loading ? <ClipLoader size={18} color="white" /> : <BsStars />}
             {loading ? "Generating..." : "Generate"}
           </button>
         </div>
@@ -365,7 +363,7 @@ Requirements:
                     key={refreshKey}
                     title="Generated component preview"
                     srcDoc={code}
-                    sandbox="allow-scripts"
+                    sandbox="allow-scripts allow-forms allow-modals allow-popups"
                     className="w-full h-full bg-white border-0"
                   />
                 )}
@@ -374,26 +372,6 @@ Requirements:
           )}
         </div>
       </div>
-
-      {/* FULL-SCREEN PREVIEW */}
-      {isNewTabOpen && (
-        <div className="fixed inset-0 z-50 bg-white">
-          <button
-            onClick={() => setIsNewTabOpen(false)}
-            className="absolute top-3 right-3 z-10 p-2 bg-white rounded-lg shadow"
-            aria-label="Close preview"
-          >
-            <IoCloseSharp size={22} />
-          </button>
-
-          <iframe
-            title="Full-screen component preview"
-            srcDoc={code}
-            sandbox="allow-scripts"
-            className="w-full h-full border-0"
-          />
-        </div>
-      )}
     </>
   );
 };
